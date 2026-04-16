@@ -1,0 +1,81 @@
+/* Rat - Edit Tracking Plugin Styles */
+
+/* Widget styles */
+.rat-recent-edits .data {
+    font-size: 13px;
+}
+
+.rat-user {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.rat-user-photo img,
+.rat-user-photo-sm img {
+    border-radius: 50%;
+    display: block;
+}
+
+.rat-type-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    background: var(--gray-100);
+    border-radius: 3px;
+    font-size: 11px;
+    color: var(--gray-600);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+/* Sidebar styles */
+.rat-edit-history {
+    margin-top: 14px;
+    padding: 0;
+    border: none;
+}
+
+.rat-edit-history legend {
+    margin-bottom: 10px;
+}
+
+.rat-history-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.rat-history-item {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--hairline-color);
+}
+
+.rat-history-item:last-child {
+    border-bottom: none;
+}
+
+.rat-history-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.rat-history-action {
+    color: var(--gray-500);
+}
+
+.rat-history-date {
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+.rat-history-attrs {
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+.rat-history-more {
+    margin-top: 8px;
+    text-align: center;
+}

@@ -1,0 +1,45 @@
+{
+    "name": "justinholtweb/craft-rat",
+    "description": "Track which users made edits to all content types on your Craft CMS site",
+    "type": "craft-plugin",
+    "version": "5.0.0",
+    "keywords": [
+        "craftcms",
+        "cms",
+        "craft",
+        "audit",
+        "edit tracking",
+        "changelog"
+    ],
+    "license": "proprietary",
+    "authors": [
+        {
+            "name": "Justin Holt",
+            "homepage": "https://justinholtweb.com"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/justinholtweb/craft-rat/issues",
+        "source": "https://github.com/justinholtweb/craft-rat"
+    },
+    "require": {
+        "php": "^8.2",
+        "craftcms/cms": "^5.3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "justinholtweb\\rat\\": "src/"
+        }
+    },
+    "extra": {
+        "name": "Rat",
+        "handle": "rat",
+        "hasCpSettings": false,
+        "hasCpSection": false,
+        "class": "justinholtweb\\rat\\Plugin",
+        "developer": "Justin Holt",
+        "developerUrl": "https://justinholtweb.com",
+        "documentationUrl": "https://github.com/justinholtweb/craft-rat/blob/main/README.md",
+        "description": "Track which users made edits to all content types on your Craft CMS site"
+    }
+}

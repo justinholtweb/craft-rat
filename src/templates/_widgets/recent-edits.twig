@@ -1,0 +1,59 @@
+{% if edits|length %}
+    <div class="rat-recent-edits">
+        <table class="data fullwidth">
+            <thead>
+                <tr>
+                    <th>{{ 'User'|t('rat') }}</th>
+                    <th>{{ 'Element'|t('rat') }}</th>
+                    <th>{{ 'Type'|t('rat') }}</th>
+                    <th>{{ 'Action'|t('rat') }}</th>
+                    <th>{{ 'Date'|t('rat') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for edit in edits %}
+                    {% set user = edit.getUser() %}
+                    {% set element = edit.getElement() %}
+                    <tr>
+                        <td>
+                            {% if user %}
+                                <div class="rat-user">
+                                    <div class="rat-user-photo">
+                                        <img src="{{ user.getThumbUrl(24) }}" alt="{{ user.friendlyName }}" width="24" height="24">
+                                    </div>
+                                    <a href="{{ user.cpEditUrl }}">{{ user.friendlyName }}</a>
+                                </div>
+                            {% else %}
+                                <span class="light">{{ 'System'|t('rat') }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if element %}
+                                <a href="{{ element.cpEditUrl }}">{{ edit.elementLabel }}</a>
+                            {% else %}
+                                <span class="light">{{ edit.elementLabel ?? 'Deleted'|t('rat') }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="rat-type-badge">{{ edit.getElementTypeLabel() }}</span>
+                        </td>
+                        <td>
+                            {% if edit.isNew %}
+                                <span class="status green" title="{{ 'Created'|t('rat') }}"></span> {{ 'Created'|t('rat') }}
+                            {% else %}
+                                <span class="status orange" title="{{ 'Edited'|t('rat') }}"></span> {{ 'Edited'|t('rat') }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span title="{{ edit.dateCreated|datetime }}">
+                                {{ edit.dateCreated|timestamp }}
+                            </span>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    <p class="light">{{ 'No edits recorded yet.'|t('rat') }}</p>
+{% endif %}
