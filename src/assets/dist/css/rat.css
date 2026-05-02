@@ -45,6 +45,10 @@
     padding: 0;
 }
 
+.rat-edit-history .meta {
+    padding: 14px;
+}
+
 .rat-history-item {
     padding: 8px 0;
     border-bottom: 1px solid var(--hairline-color);

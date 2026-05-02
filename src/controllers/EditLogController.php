@@ -31,7 +31,7 @@ class EditLogController extends Controller
                 'id' => $entry->id,
                 'userId' => $entry->userId,
                 'userName' => $user ? $user->getFriendlyName() : 'System',
-                'userPhoto' => $user ? $user->getThumbUrl(30) : null,
+                'userPhoto' => $user && $user->photo ? $user->photo->getThumbUrl(30) : null,
                 'isNew' => $entry->isNew,
                 'dirtyAttributes' => $entry->getDirtyAttributesList(),
                 'dateCreated' => $entry->dateCreated?->format('c'),

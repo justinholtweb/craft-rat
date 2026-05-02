@@ -38,7 +38,7 @@
         "hasCpSection": false,
         "class": "justinholtweb\\rat\\Plugin",
         "developer": "Justin Holt",
-        "developerUrl": "https://justinholtweb.com",
+        "developerUrl": "https://justinholt.com",
         "documentationUrl": "https://github.com/justinholtweb/craft-rat/blob/main/README.md",
         "description": "Track which users made edits to all content types on your Craft CMS site"
     }

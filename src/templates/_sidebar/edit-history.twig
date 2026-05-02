@@ -1,45 +1,49 @@
 <fieldset class="rat-edit-history">
     <legend class="h6">{{ 'Edit History'|t('rat') }}</legend>
 
-    {% if history|length %}
-        <ul class="rat-history-list">
-            {% for edit in history %}
-                {% set user = edit.getUser() %}
-                <li class="rat-history-item">
-                    <div class="rat-history-header">
-                        {% if user %}
-                            <div class="rat-user-photo-sm">
-                                <img src="{{ user.getThumbUrl(20) }}" alt="{{ user.friendlyName }}" width="20" height="20">
-                            </div>
-                            <strong>{{ user.friendlyName }}</strong>
-                        {% else %}
-                            <strong>{{ 'System'|t('rat') }}</strong>
-                        {% endif %}
-                        <span class="rat-history-action">
-                            {{ edit.isNew ? 'created'|t('rat') : 'edited'|t('rat') }}
-                        </span>
-                    </div>
-                    <div class="rat-history-date light">
-                        <span title="{{ edit.dateCreated|datetime }}">
-                            {{ edit.dateCreated|timestamp }}
-                        </span>
-                    </div>
-                    {% set attrs = edit.getDirtyAttributesList() %}
-                    {% if attrs|length %}
-                        <div class="rat-history-attrs light">
-                            {{ 'Changed:'|t('rat') }} {{ attrs|join(', ') }}
+    <div class="meta">
+        {% if history|length %}
+            <ul class="rat-history-list">
+                {% for edit in history %}
+                    {% set user = edit.getUser() %}
+                    <li class="rat-history-item">
+                        <div class="rat-history-header">
+                            {% if user %}
+                                <div class="rat-user-photo-sm">
+                                    {% if user.photo %}
+                                        <img src="{{ user.photo.getThumbUrl(20) }}" alt="{{ user.friendlyName }}" width="20" height="20">
+                                    {% endif %}
+                                </div>
+                                <strong>{{ user.friendlyName }}</strong>
+                            {% else %}
+                                <strong>{{ 'System'|t('rat') }}</strong>
+                            {% endif %}
+                            <span class="rat-history-action">
+                                {{ edit.isNew ? 'created'|t('rat') : 'edited'|t('rat') }}
+                            </span>
                         </div>
-                    {% endif %}
-                </li>
-            {% endfor %}
-        </ul>
+                        <div class="rat-history-date light">
+                            <span title="{{ edit.dateCreated|datetime }}">
+                                {{ edit.dateCreated|timestamp }}
+                            </span>
+                        </div>
+                        {% set attrs = edit.getDirtyAttributesList() %}
+                        {% if attrs|length %}
+                            <div class="rat-history-attrs light">
+                                {{ 'Changed:'|t('rat') }} {{ attrs|join(', ') }}
+                            </div>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
 
-        {% if hasMore is defined and hasMore %}
-            <div class="rat-history-more">
-                <a class="light" href="#" data-rat-load-more>{{ 'View more...'|t('rat') }}</a>
-            </div>
+            {% if hasMore is defined and hasMore %}
+                <div class="rat-history-more">
+                    <a class="light" href="#" data-rat-load-more>{{ 'View more...'|t('rat') }}</a>
+                </div>
+            {% endif %}
+        {% else %}
+            <p class="light">{{ 'No edit history yet.'|t('rat') }}</p>
         {% endif %}
-    {% else %}
-        <p class="light">{{ 'No edit history yet.'|t('rat') }}</p>
-    {% endif %}
+    </div>
 </fieldset>
