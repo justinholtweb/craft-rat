@@ -2,6 +2,8 @@
 
 Track which users made edits to all content types on your Craft CMS site. Rat logs every element save with user attribution, changed fields, and timestamps — then surfaces that history in a dashboard widget and per-element sidebar panel.
 
+Full documentation: [craft-rat.com](https://craft-rat.com)
+
 ## Requirements
 
 - Craft CMS 5.3 or later

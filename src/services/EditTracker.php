@@ -14,12 +14,7 @@ class EditTracker extends Component
 {
     public function logEdit(ElementInterface $element, bool $isNew): void
     {
-        // Skip drafts, revisions, propagating saves, and bulk resaves
-        if ($element->getIsDraft() || $element->getIsRevision()) {
-            return;
-        }
-
-        if ($element->propagating || $element->resaving) {
+        if (!$this->shouldTrack($element)) {
             return;
         }
 
@@ -37,6 +32,26 @@ class EditTracker extends Component
         $record->dirtyAttributes = !empty($dirtyAttributes) ? json_encode($dirtyAttributes) : null;
 
         $record->save(false);
+    }
+
+    /**
+     * Determines whether a save should be recorded.
+     *
+     * Drafts, revisions, propagating saves (multi-site content propagation),
+     * and bulk resaves are intentionally excluded so the log only reflects
+     * real, intentional content changes.
+     */
+    public function shouldTrack(ElementInterface $element): bool
+    {
+        if ($element->getIsDraft() || $element->getIsRevision()) {
+            return false;
+        }
+
+        if ($element->propagating || $element->resaving) {
+            return false;
+        }
+
+        return true;
     }
 
     /**

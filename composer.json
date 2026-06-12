@@ -15,21 +15,44 @@
     "authors": [
         {
             "name": "Justin Holt",
-            "homepage": "https://justinholtweb.com"
+            "homepage": "https://justinholt.com"
         }
     ],
     "support": {
+        "email": "justin@justinholt.com",
         "issues": "https://github.com/justinholtweb/craft-rat/issues",
-        "source": "https://github.com/justinholtweb/craft-rat"
+        "source": "https://github.com/justinholtweb/craft-rat",
+        "docs": "https://craft-rat.com"
     },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
     "require": {
         "php": "^8.2",
         "craftcms/cms": "^5.3.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.5"
     },
     "autoload": {
         "psr-4": {
             "justinholtweb\\rat\\": "src/"
         }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "justinholtweb\\rat\\tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "config": {
+        "allow-plugins": {
+            "craftcms/plugin-installer": true,
+            "yiisoft/yii2-composer": true
+        },
+        "sort-packages": true,
+        "optimize-autoloader": true
     },
     "extra": {
         "name": "Rat",
@@ -39,7 +62,8 @@
         "class": "justinholtweb\\rat\\Plugin",
         "developer": "Justin Holt",
         "developerUrl": "https://justinholt.com",
-        "documentationUrl": "https://github.com/justinholtweb/craft-rat/blob/main/README.md",
+        "documentationUrl": "https://craft-rat.com",
+        "changelogUrl": "https://raw.githubusercontent.com/justinholtweb/craft-rat/main/CHANGELOG.md",
         "description": "Track which users made edits to all content types on your Craft CMS site"
     }
 }
