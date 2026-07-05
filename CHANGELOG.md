@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.1.0 - 2026-07-05
+
+### Added
+- “Last Editor” column, available on every element index (entries, categories, assets, users, Commerce products, etc.), showing who made the most recent tracked edit and when
+- “Last Editor” sort option on element indexes, so you can order any list by who last touched each element
+
 ## 5.0.0 - 2026-06-12
 
 ### Added

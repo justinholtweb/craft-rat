@@ -5,9 +5,12 @@ namespace justinholtweb\rat;
 use Craft;
 use craft\base\Element;
 use craft\base\Plugin as BasePlugin;
+use craft\events\DefineAttributeHtmlEvent;
 use craft\events\DefineHtmlEvent;
 use craft\events\ModelEvent;
 use craft\events\RegisterComponentTypesEvent;
+use craft\events\RegisterElementSortOptionsEvent;
+use craft\events\RegisterElementTableAttributesEvent;
 use craft\services\Dashboard;
 use justinholtweb\rat\assets\RatAsset;
 use justinholtweb\rat\services\EditTracker;
@@ -65,6 +68,54 @@ class Plugin extends BasePlugin
             Dashboard::EVENT_REGISTER_WIDGET_TYPES,
             function (RegisterComponentTypesEvent $event) {
                 $event->types[] = RecentEditsWidget::class;
+            },
+        );
+
+        // Make the "Last Editor" column available on every element index
+        Event::on(
+            Element::class,
+            Element::EVENT_REGISTER_TABLE_ATTRIBUTES,
+            function (RegisterElementTableAttributesEvent $event) {
+                $event->tableAttributes[EditTracker::LAST_EDITOR_ATTRIBUTE] = [
+                    'label' => Craft::t('rat', 'Last Editor'),
+                ];
+            },
+        );
+
+        // Render the "Last Editor" column cell
+        Event::on(
+            Element::class,
+            Element::EVENT_DEFINE_ATTRIBUTE_HTML,
+            function (DefineAttributeHtmlEvent $event) {
+                if ($event->attribute !== EditTracker::LAST_EDITOR_ATTRIBUTE) {
+                    return;
+                }
+
+                /** @var Element $element */
+                $element = $event->sender;
+
+                if (!$element->id || !$element->siteId) {
+                    $event->html = '';
+                    return;
+                }
+
+                $event->html = $this->getEditTracker()->getLastEditorCellHtml(
+                    $element->id,
+                    $element->siteId,
+                );
+            },
+        );
+
+        // Allow sorting element indexes by who made the last edit
+        Event::on(
+            Element::class,
+            Element::EVENT_REGISTER_SORT_OPTIONS,
+            function (RegisterElementSortOptionsEvent $event) {
+                $event->sortOptions[] = [
+                    'label' => Craft::t('rat', 'Last Editor'),
+                    'orderBy' => fn(int $dir) => $this->getEditTracker()->getLastEditorSortOrderBy($dir),
+                    'attribute' => EditTracker::LAST_EDITOR_ATTRIBUTE,
+                ];
             },
         );
 
