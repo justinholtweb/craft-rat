@@ -1,0 +1,8 @@
+actor: UnitTester
+bootstrap: false
+# Pure unit tests — no Craft application, no database. These exercise the
+# plugin's logic that doesn't depend on a booted Craft app, so they stay fast
+# and can also be run straight through PHPUnit via phpunit.xml.
+modules:
+    enabled:
+        - Asserts

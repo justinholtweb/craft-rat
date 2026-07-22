@@ -2,7 +2,7 @@
     "name": "justinholtweb/craft-rat",
     "description": "Track which users made edits to all content types on your Craft CMS site",
     "type": "craft-plugin",
-    "version": "5.1.0",
+    "version": "5.1.1",
     "keywords": [
         "craftcms",
         "cms",
@@ -31,7 +31,14 @@
         "craftcms/cms": "^5.3.0"
     },
     "require-dev": {
-        "phpunit/phpunit": "^10.5"
+        "codeception/codeception": "^5.2.0",
+        "codeception/module-asserts": "^3.0.0",
+        "codeception/module-datafactory": "^3.0.0",
+        "codeception/module-yii2": "^1.1.9",
+        "fakerphp/faker": "^1.19.0",
+        "league/factory-muffin": "^3.3.0",
+        "phpunit/phpunit": "^10.5",
+        "vlucas/phpdotenv": "^5.4.1"
     },
     "autoload": {
         "psr-4": {
@@ -44,7 +51,9 @@
         }
     },
     "scripts": {
-        "test": "phpunit"
+        "test": "codecept run",
+        "test-unit": "codecept run unit",
+        "test-integration": "codecept run integration"
     },
     "config": {
         "allow-plugins": {

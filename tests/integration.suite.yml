@@ -1,0 +1,16 @@
+actor: IntegrationTester
+bootstrap: false
+modules:
+    enabled:
+        - \craft\test\Craft:
+            configFile: "tests/_craft/config/test.php"
+            entryUrl: "https://test.craftcms.test/index.php"
+            migrations: []
+            plugins:
+                - class: justinholtweb\rat\Plugin
+                  handle: rat
+            cleanup: true
+            transaction: true
+            dbSetup:
+                clean: true
+                setupCraft: true

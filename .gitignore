@@ -4,3 +4,12 @@ vendor/
 composer.lock
 
 .DS_Store
+
+# Test artifacts
+cpresources/
+tests/_output/*
+!tests/_output/.gitkeep
+tests/_support/_generated/
+tests/_craft/storage/*
+!tests/_craft/storage/.gitkeep
+tests/_craft/config/project/

@@ -40,7 +40,11 @@ class RecentEditsWidget extends Widget
     {
         Craft::$app->getView()->registerAssetBundle(RatAsset::class);
 
-        $edits = Plugin::getInstance()->getEditTracker()->getRecentEdits($this->limit);
+        // Only show edits to elements this user could open themselves.
+        $edits = Plugin::getInstance()->getEditTracker()->getRecentEditsVisibleTo(
+            Craft::$app->getUser()->getIdentity(),
+            $this->limit,
+        );
 
         return Craft::$app->getView()->renderTemplate('rat/_widgets/recent-edits', [
             'edits' => $edits,

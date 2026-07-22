@@ -6,6 +6,7 @@ use Craft;
 use craft\base\Component;
 use craft\base\ElementInterface;
 use craft\db\Query;
+use craft\elements\User;
 use craft\helpers\Html;
 use justinholtweb\rat\models\EditLog;
 use justinholtweb\rat\records\EditLogRecord;
@@ -18,6 +19,17 @@ class EditTracker extends Component
      * The element index table attribute / sort key for the "Last Editor" column.
      */
     public const LAST_EDITOR_ATTRIBUTE = 'ratLastEditor';
+
+    /**
+     * How many log rows to examine at a time when filtering by visibility.
+     */
+    private const VISIBILITY_BATCH_SIZE = 50;
+
+    /**
+     * Ceiling on visibility-filtering batches, so a user who can view almost
+     * nothing can't turn a widget render into a full table scan.
+     */
+    private const MAX_VISIBILITY_BATCHES = 10;
 
     /**
      * Per-request cache of last-editor lookups, keyed by "elementId-siteId".
@@ -39,13 +51,19 @@ class EditTracker extends Component
         $record->siteId = $element->siteId;
         $record->userId = $user?->id;
         $record->elementType = get_class($element);
-        $record->elementLabel = (string)$element;
+        // The column is 255 wide, and this runs inside the element's own save.
+        // An overlong label must never be what stops content from saving.
+        $record->elementLabel = mb_substr((string)$element, 0, 255);
         $record->isNew = $isNew;
 
         $dirtyAttributes = $element->getDirtyAttributes();
         $record->dirtyAttributes = !empty($dirtyAttributes) ? json_encode($dirtyAttributes) : null;
 
         $record->save(false);
+
+        // This edit is now the element's most recent one, so any memoized
+        // answer from earlier in the request is stale.
+        unset($this->lastEditorCache["{$element->id}-{$element->siteId}"]);
     }
 
     /**
@@ -86,12 +104,70 @@ class EditTracker extends Component
                 'l.dateCreated',
             ])
             ->from(['l' => '{{%rat_editlog}}'])
-            ->orderBy(['l.dateCreated' => SORT_DESC])
+            // dateCreated only resolves to the second, so tie-break on id to
+            // keep paginated results stable and genuinely newest-first.
+            ->orderBy(['l.dateCreated' => SORT_DESC, 'l.id' => SORT_DESC])
             ->limit($limit)
             ->offset($offset)
             ->all();
 
         return array_map(fn(array $row) => $this->createModel($row), $rows);
+    }
+
+    /**
+     * Returns recent edits the given user is allowed to see, skipping any whose
+     * element they can't view — an editor scoped to one section shouldn't learn
+     * the titles of entries in the sections they were kept out of.
+     *
+     * Rows are filtered after the fact rather than in SQL, because visibility
+     * depends on per-element-type permission logic that isn't expressible as a
+     * query. To still return a full page, this walks the log in batches, up to
+     * a bounded number of them.
+     *
+     * @return EditLog[]
+     */
+    public function getRecentEditsVisibleTo(?User $user, int $limit = 20): array
+    {
+        if (!$user) {
+            return [];
+        }
+
+        $elementsService = Craft::$app->getElements();
+        $batchSize = max($limit, self::VISIBILITY_BATCH_SIZE);
+
+        $visible = [];
+        $offset = 0;
+
+        for ($batch = 0; $batch < self::MAX_VISIBILITY_BATCHES; $batch++) {
+            $edits = $this->getRecentEdits($batchSize, $offset);
+
+            if (empty($edits)) {
+                break;
+            }
+
+            foreach ($edits as $edit) {
+                $element = $edit->getElement();
+
+                // A missing element is either deleted or on a site this user
+                // can't reach; either way there's nothing left to authorize
+                // against, so only admins keep seeing it.
+                $canView = $element !== null
+                    ? $elementsService->canView($element, $user)
+                    : $user->admin;
+
+                if ($canView) {
+                    $visible[] = $edit;
+
+                    if (count($visible) === $limit) {
+                        return $visible;
+                    }
+                }
+            }
+
+            $offset += $batchSize;
+        }
+
+        return $visible;
     }
 
     /**
@@ -116,7 +192,7 @@ class EditTracker extends Component
                 'l.elementId' => $elementId,
                 'l.siteId' => $siteId,
             ])
-            ->orderBy(['l.dateCreated' => SORT_DESC])
+            ->orderBy(['l.dateCreated' => SORT_DESC, 'l.id' => SORT_DESC])
             ->limit($limit)
             ->offset($offset)
             ->all();

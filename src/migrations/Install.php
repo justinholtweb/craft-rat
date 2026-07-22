@@ -3,7 +3,6 @@
 namespace justinholtweb\rat\migrations;
 
 use craft\db\Migration;
-use craft\helpers\MigrationHelper;
 
 class Install extends Migration
 {
@@ -38,7 +37,7 @@ class Install extends Migration
 
     public function safeDown(): bool
     {
-        MigrationHelper::dropTable('{{%rat_editlog}}', $this);
+        $this->dropTableIfExists('{{%rat_editlog}}');
 
         return true;
     }
