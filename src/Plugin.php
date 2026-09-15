@@ -131,20 +131,35 @@ class Plugin extends BasePlugin
                     return;
                 }
 
+                $pageSize = 10;
+
+                // One extra row tells us whether "View more..." has anything
+                // left to fetch, rather than guessing from a full page.
                 $history = $this->getEditTracker()->getElementHistory(
                     $element->id,
                     $element->siteId,
-                    10,
+                    $pageSize + 1,
                 );
 
-                Craft::$app->getView()->registerAssetBundle(RatAsset::class);
+                $hasMore = count($history) > $pageSize;
 
-                $event->html .= Craft::$app->getView()->renderTemplate(
+                if ($hasMore) {
+                    array_pop($history);
+                }
+
+                $view = Craft::$app->getView();
+                $view->registerAssetBundle(RatAsset::class);
+                $view->registerTranslations('rat', [
+                    'Couldn’t load more edit history.',
+                ]);
+
+                $event->html .= $view->renderTemplate(
                     'rat/_sidebar/edit-history',
                     [
                         'history' => $history,
                         'element' => $element,
-                        'hasMore' => count($history) >= 10,
+                        'hasMore' => $hasMore,
+                        'pageSize' => $pageSize,
                     ],
                 );
             },

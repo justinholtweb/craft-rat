@@ -3,16 +3,20 @@
 namespace justinholtweb\rat\tests\support;
 
 use Craft;
+use craft\elements\Asset;
 use craft\elements\Entry;
 use craft\elements\User;
+use craft\fs\Local;
 use craft\helpers\Db;
 use craft\fieldlayoutelements\entries\EntryTitleField;
+use craft\helpers\FileHelper;
 use craft\helpers\StringHelper;
 use craft\models\EntryType;
 use craft\models\FieldLayout;
 use craft\models\FieldLayoutTab;
 use craft\models\Section;
 use craft\models\Section_SiteSettings;
+use craft\models\Volume;
 use DateTime;
 use justinholtweb\rat\Plugin;
 use justinholtweb\rat\services\EditTracker;
@@ -48,6 +52,106 @@ trait RatTestTrait
         }
 
         return $user;
+    }
+
+    /**
+     * Creates a user with a real photo asset attached. The avatar markup takes
+     * a different branch for users who have a photo, and that branch is the one
+     * that broke on Craft 5 (see the getThumbUrl() regression), so it needs a
+     * genuine asset behind it rather than a stubbed photoId.
+     */
+    protected function createUserWithPhoto(?string $username = null): User
+    {
+        $user = $this->createUser($username);
+
+        $photo = $this->createImageAsset();
+
+        // Saving a user with a photo makes Craft relocate it into the
+        // configured user photo volume, so point that at the test volume.
+        Craft::$app->getProjectConfig()->set('users.photoVolumeUid', $photo->getVolume()->uid);
+
+        $user->photoId = $photo->id;
+
+        if (!Craft::$app->getElements()->saveElement($user, false)) {
+            $this->fail('Could not attach photo to test user: ' . json_encode($user->getErrors()));
+        }
+
+        return $user;
+    }
+
+    /**
+     * Saves a small generated PNG into a throwaway local volume and returns it.
+     */
+    protected function createImageAsset(): Asset
+    {
+        $volume = $this->assetVolume();
+        $folder = Craft::$app->getAssets()->getRootFolderByVolumeId($volume->id);
+
+        if ($folder === null) {
+            $this->fail('Test asset volume has no root folder.');
+        }
+
+        $tempPath = Craft::$app->getPath()->getTempPath()
+            . DIRECTORY_SEPARATOR . StringHelper::randomString(10) . '.png';
+
+        $image = imagecreatetruecolor(40, 40);
+        imagefill($image, 0, 0, imagecolorallocate($image, 120, 160, 200));
+        imagepng($image, $tempPath);
+        imagedestroy($image);
+
+        $asset = new Asset();
+        $asset->setScenario(Asset::SCENARIO_CREATE);
+        $asset->tempFilePath = $tempPath;
+        $asset->setFilename(StringHelper::randomString(10) . '.png');
+        $asset->newFolderId = $folder->id;
+        $asset->setVolumeId($volume->id);
+
+        if (!Craft::$app->getElements()->saveElement($asset, false)) {
+            $this->fail('Could not save test asset: ' . json_encode($asset->getErrors()));
+        }
+
+        return $asset;
+    }
+
+    /**
+     * Lazily provisions (and reuses) a local filesystem + volume for test assets.
+     */
+    protected function assetVolume(): Volume
+    {
+        $volumesService = Craft::$app->getVolumes();
+        $existing = $volumesService->getVolumeByHandle('ratTestAssets');
+
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        // Craft refuses local filesystems rooted inside its system directories,
+        // and getTestsPath() and the runtime path are both on that list — so the
+        // volume has to live outside the project entirely.
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'rat-test-assets';
+        FileHelper::createDirectory($path);
+
+        $fs = new Local([
+            'name' => 'Rat Test Assets',
+            'handle' => 'ratTestAssets',
+            'path' => $path,
+        ]);
+
+        if (!Craft::$app->getFs()->saveFilesystem($fs)) {
+            $this->fail('Could not save test filesystem: ' . json_encode($fs->getErrors()));
+        }
+
+        $volume = new Volume([
+            'name' => 'Rat Test Assets',
+            'handle' => 'ratTestAssets',
+            'fsHandle' => 'ratTestAssets',
+        ]);
+
+        if (!$volumesService->saveVolume($volume)) {
+            $this->fail('Could not save test volume: ' . json_encode($volume->getErrors()));
+        }
+
+        return $volume;
     }
 
     /**

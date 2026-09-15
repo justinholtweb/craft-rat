@@ -2,7 +2,7 @@
     "name": "justinholtweb/craft-rat",
     "description": "Track which users made edits to all content types on your Craft CMS site",
     "type": "craft-plugin",
-    "version": "5.1.1",
+    "version": "5.1.2",
     "keywords": [
         "craftcms",
         "cms",

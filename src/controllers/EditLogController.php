@@ -4,6 +4,7 @@ namespace justinholtweb\rat\controllers;
 
 use Craft;
 use craft\web\Controller;
+use craft\web\View;
 use justinholtweb\rat\Plugin;
 use yii\web\ForbiddenHttpException;
 use yii\web\NotFoundHttpException;
@@ -35,28 +36,53 @@ class EditLogController extends Controller
             throw new ForbiddenHttpException('You don’t have permission to view this element’s edit history.');
         }
 
+        // Fetch one more than asked for, so we can tell the caller whether
+        // another page exists without running a second count query.
         $history = Plugin::getInstance()->getEditTracker()->getElementHistory(
             $elementId,
             $siteId,
-            $limit,
+            $limit + 1,
             $offset,
         );
 
+        $hasMore = count($history) > $limit;
+
+        if ($hasMore) {
+            array_pop($history);
+        }
+
         $data = array_map(function ($entry) {
             $user = $entry->getUser();
+            $photo = $user?->getPhoto();
             return [
                 'id' => $entry->id,
                 'userId' => $entry->userId,
                 'userName' => $user ? $user->getFriendlyName() : 'System',
-                'userPhoto' => $user && $user->photo ? $user->photo->getThumbUrl(30) : null,
+                // Craft 5 moved thumbnail URL generation off the Asset element
+                // and onto the Assets service.
+                'userPhoto' => $photo
+                    ? Craft::$app->getAssets()->getThumbUrl($photo, 30, iconFallback: false)
+                    : null,
                 'isNew' => $entry->isNew,
                 'dirtyAttributes' => $entry->getDirtyAttributesList(),
                 'dateCreated' => $entry->dateCreated?->format('c'),
             ];
         }, $history);
 
+        // `html` is what rat.js appends — rendering the same partial the
+        // sidebar uses keeps appended rows identical to the initial ones.
+        // `history` is the structured equivalent, for anything consuming the
+        // endpoint directly.
+        $html = Craft::$app->getView()->renderTemplate(
+            'rat/_sidebar/_history-items',
+            ['history' => $history],
+            View::TEMPLATE_MODE_CP,
+        );
+
         return $this->asJson([
             'history' => $data,
+            'html' => $html,
+            'hasMore' => $hasMore,
         ]);
     }
 }

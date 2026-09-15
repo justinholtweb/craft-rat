@@ -1,0 +1,32 @@
+{# Rendered both inline by edit-history.twig and standalone by
+   EditLogController::actionElementHistory(), so that rows appended by
+   rat.js are identical to the ones rendered with the page. #}
+{% for edit in history %}
+    {% set user = edit.getUser() %}
+    <li class="rat-history-item">
+        <div class="rat-history-header">
+            {% if user %}
+                <div class="rat-user-photo-sm">
+                    {{ user.getThumbHtml(20)|raw }}
+                </div>
+                <strong>{{ user.friendlyName }}</strong>
+            {% else %}
+                <strong>{{ 'System'|t('rat') }}</strong>
+            {% endif %}
+            <span class="rat-history-action">
+                {{ edit.isNew ? 'created'|t('rat') : 'edited'|t('rat') }}
+            </span>
+        </div>
+        <div class="rat-history-date light">
+            <span title="{{ edit.dateCreated|datetime }}">
+                {{ edit.dateCreated|timestamp }}
+            </span>
+        </div>
+        {% set attrs = edit.getDirtyAttributesList() %}
+        {% if attrs|length %}
+            <div class="rat-history-attrs light">
+                {{ 'Changed:'|t('rat') }} {{ attrs|join(', ') }}
+            </div>
+        {% endif %}
+    </li>
+{% endfor %}

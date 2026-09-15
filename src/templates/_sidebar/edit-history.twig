@@ -1,43 +1,16 @@
-<fieldset class="rat-edit-history">
+<fieldset class="rat-edit-history"
+          data-rat-element-id="{{ element.id }}"
+          data-rat-site-id="{{ element.siteId }}"
+          data-rat-page-size="{{ pageSize }}">
     <legend class="h6">{{ 'Edit History'|t('rat') }}</legend>
 
     <div class="meta">
         {% if history|length %}
             <ul class="rat-history-list">
-                {% for edit in history %}
-                    {% set user = edit.getUser() %}
-                    <li class="rat-history-item">
-                        <div class="rat-history-header">
-                            {% if user %}
-                                <div class="rat-user-photo-sm">
-                                    {% if user.photo %}
-                                        <img src="{{ user.photo.getThumbUrl(20) }}" alt="{{ user.friendlyName }}" width="20" height="20">
-                                    {% endif %}
-                                </div>
-                                <strong>{{ user.friendlyName }}</strong>
-                            {% else %}
-                                <strong>{{ 'System'|t('rat') }}</strong>
-                            {% endif %}
-                            <span class="rat-history-action">
-                                {{ edit.isNew ? 'created'|t('rat') : 'edited'|t('rat') }}
-                            </span>
-                        </div>
-                        <div class="rat-history-date light">
-                            <span title="{{ edit.dateCreated|datetime }}">
-                                {{ edit.dateCreated|timestamp }}
-                            </span>
-                        </div>
-                        {% set attrs = edit.getDirtyAttributesList() %}
-                        {% if attrs|length %}
-                            <div class="rat-history-attrs light">
-                                {{ 'Changed:'|t('rat') }} {{ attrs|join(', ') }}
-                            </div>
-                        {% endif %}
-                    </li>
-                {% endfor %}
+                {% include 'rat/_sidebar/_history-items' %}
             </ul>
 
-            {% if hasMore is defined and hasMore %}
+            {% if hasMore %}
                 <div class="rat-history-more">
                     <a class="light" href="#" data-rat-load-more>{{ 'View more...'|t('rat') }}</a>
                 </div>

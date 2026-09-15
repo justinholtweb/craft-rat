@@ -12,6 +12,7 @@ class RatAsset extends AssetBundle
         $this->sourcePath = __DIR__ . '/dist';
         $this->depends = [CpAsset::class];
         $this->css = ['css/rat.css'];
+        $this->js = ['js/rat.js'];
 
         parent::init();
     }

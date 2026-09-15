@@ -11,10 +11,38 @@
     gap: 6px;
 }
 
+/* User photos come from Element::getThumbHtml(), which renders a `.thumb`
+   wrapper containing either an inline SVG (initials fallback) or an empty
+   div that the CP's ElementThumbLoader fills with an <img>. The loader skips
+   thumbs with no layout box, so the wrapper needs explicit dimensions rather
+   than collapsing to the (initially empty) content. */
+.rat-user-photo,
+.rat-user-photo-sm {
+    flex: 0 0 auto;
+}
+
+.rat-user-photo,
+.rat-user-photo > .thumb {
+    width: 24px;
+    height: 24px;
+}
+
+.rat-user-photo-sm,
+.rat-user-photo-sm > .thumb {
+    width: 20px;
+    height: 20px;
+}
+
 .rat-user-photo img,
-.rat-user-photo-sm img {
+.rat-user-photo svg,
+.rat-user-photo-sm img,
+.rat-user-photo-sm svg {
+    width: 100%;
+    height: 100%;
+    max-width: none;
     border-radius: 50%;
     display: block;
+    object-fit: cover;
 }
 
 .rat-type-badge {
@@ -82,4 +110,9 @@
 .rat-history-more {
     margin-top: 8px;
     text-align: center;
+}
+
+.rat-history-more a.rat-loading {
+    opacity: 0.5;
+    pointer-events: none;
 }

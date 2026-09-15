@@ -19,9 +19,7 @@
                             {% if user %}
                                 <div class="rat-user">
                                     <div class="rat-user-photo">
-                                        {% if user.photo %}
-                                            <img src="{{ user.photo.getThumbUrl(24) }}" alt="{{ user.friendlyName }}" width="24" height="24">
-                                        {% endif %}
+                                        {{ user.getThumbHtml(24)|raw }}
                                     </div>
                                     <a href="{{ user.cpEditUrl }}">{{ user.friendlyName }}</a>
                                 </div>
