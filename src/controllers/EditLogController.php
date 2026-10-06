@@ -51,7 +51,9 @@ class EditLogController extends Controller
             array_pop($history);
         }
 
-        $data = array_map(function ($entry) {
+        Plugin::getInstance()->getEditTracker()->preload($history, elements: false);
+
+        $data = array_map(function($entry) {
             $user = $entry->getUser();
             $photo = $user?->getPhoto();
             return [

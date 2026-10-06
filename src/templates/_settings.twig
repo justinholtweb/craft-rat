@@ -1,0 +1,32 @@
+{% import '_includes/forms' as forms %}
+
+{{ forms.textField({
+    label: 'Keep edit history for'|t('rat'),
+    instructions: 'Days. Older entries are deleted during Craft’s garbage collection, or by `php craft rat/log/prune`. Set 0 to keep everything.'|t('rat'),
+    id: 'retentionDays',
+    name: 'retentionDays',
+    value: settings.retentionDays,
+    type: 'number',
+    min: 0,
+    size: 6,
+    errors: settings.getErrors('retentionDays'),
+}) }}
+
+{{ forms.lightswitchField({
+    label: 'Record front-end saves by visitors who aren’t signed in'|t('rat'),
+    instructions: 'Carts recalculating and forms submitting save elements too. On a store that’s several entries per cart action, none of them an edit.'|t('rat'),
+    id: 'trackAnonymousSiteSaves',
+    name: 'trackAnonymousSiteSaves',
+    on: settings.trackAnonymousSiteSaves,
+}) }}
+
+{{ forms.textareaField({
+    label: 'Element types not to record'|t('rat'),
+    instructions: 'One class name per line. Commerce orders are excluded by default: a cart is an order, saved on every change, and Commerce keeps its own order history.'|t('rat'),
+    id: 'excludedElementTypes',
+    name: 'excludedElementTypes',
+    value: settings.excludedElementTypes|join("\n"),
+    rows: 4,
+    class: 'code',
+    errors: settings.getErrors('excludedElementTypes'),
+}) }}

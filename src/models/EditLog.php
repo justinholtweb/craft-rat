@@ -30,22 +30,49 @@ class EditLog extends Model
         ];
     }
 
+    private ?User $_user = null;
+    private bool $_userLoaded = false;
+    private ?ElementInterface $_element = null;
+    private bool $_elementLoaded = false;
+
     public function getUser(): ?User
     {
-        if (!$this->userId) {
-            return null;
+        if (!$this->_userLoaded) {
+            $this->setUser($this->userId ? User::find()->id($this->userId)->one() : null);
         }
 
-        return User::find()->id($this->userId)->one();
+        return $this->_user;
+    }
+
+    /**
+     * Hands over an already-loaded user, so a list of edits costs one user query rather than one
+     * per row. See {@see \justinholtweb\rat\services\EditTracker::preload()}.
+     */
+    public function setUser(?User $user): void
+    {
+        $this->_user = $user;
+        $this->_userLoaded = true;
     }
 
     public function getElement(): ?ElementInterface
     {
-        if (!$this->elementId || !$this->elementType) {
-            return null;
+        if (!$this->_elementLoaded) {
+            $this->setElement($this->elementId && $this->elementType
+                ? Craft::$app->getElements()->getElementById($this->elementId, $this->elementType, $this->siteId)
+                : null);
         }
 
-        return Craft::$app->getElements()->getElementById($this->elementId, $this->elementType, $this->siteId);
+        return $this->_element;
+    }
+
+    /**
+     * Hands over an already-loaded element (or null for one that's gone). See
+     * {@see \justinholtweb\rat\services\EditTracker::preload()}.
+     */
+    public function setElement(?ElementInterface $element): void
+    {
+        $this->_element = $element;
+        $this->_elementLoaded = true;
     }
 
     public function getDirtyAttributesList(): array

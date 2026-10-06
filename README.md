@@ -24,12 +24,12 @@ Or install via the Craft control panel under **Settings > Plugins**.
 
 ### Automatic Edit Tracking
 
-Rat listens for saves on all element types and logs who made the change, what fields were modified, and whether the element was created or updated. Drafts, revisions, propagating saves, and bulk resaves are automatically filtered out.
+Rat listens for saves on all element types and logs who made the change, what fields were modified, and whether the element was created or updated. Drafts, revisions, propagating saves, and bulk resaves are automatically filtered out, and so are saves by visitors who aren't signed in (carts, form submissions) and any element type you exclude. Commerce orders are excluded by default.
 
 Supported element types:
 
 - Entries, Assets, Globals, Categories, Tags, Users
-- Craft Commerce Products, Variants, and Orders (if Commerce is installed)
+- Craft Commerce Products and Variants (if Commerce is installed). Orders are excluded by default because a cart is an order, saved on every change; remove it from the exclusions to record them.
 - Any custom element type
 
 ### Dashboard Widget
@@ -61,17 +61,23 @@ The sidebar uses `Element::EVENT_DEFINE_SIDEBAR_HTML` to inject edit history int
 
 ## Cleanup
 
-Rat includes a `cleanupOldLogs` method that removes records older than a given number of days (default 90). This is not scheduled automatically — call it from a console command or cron job if needed:
+The log is pruned during Craft's garbage collection: entries older than **Keep edit history for**
+(90 days by default) are deleted. Set it to 0 to keep everything. To prune on your own schedule:
 
-```php
-use justinholtweb\rat\Plugin as Rat;
-
-Rat::getInstance()->editTracker->cleanupOldLogs(90);
+```bash
+php craft rat/log/prune            # uses the setting
+php craft rat/log/prune --days=30
 ```
 
 ## Configuration
 
-Rat works out of the box with no configuration. Install and go.
+Rat works out of the box. Under **Settings → Plugins → Rat**, or in `config/rat.php`:
+
+| Setting | Default | |
+|---|---|---|
+| `retentionDays` | `90` | Days of history to keep. `0` keeps everything. |
+| `trackAnonymousSiteSaves` | `false` | Record front-end saves by visitors who aren't signed in. Queue jobs are always recorded. |
+| `excludedElementTypes` | `['craft\\commerce\\elements\\Order']` | Element types never recorded. |
 
 ## Development
 

@@ -7,10 +7,13 @@ use craft\base\Component;
 use craft\base\ElementInterface;
 use craft\db\Query;
 use craft\elements\User;
+use craft\helpers\Db;
 use craft\helpers\Html;
-use justinholtweb\rat\models\EditLog;
-use justinholtweb\rat\records\EditLogRecord;
 use DateTime;
+use justinholtweb\rat\models\EditLog;
+use justinholtweb\rat\models\Settings;
+use justinholtweb\rat\Plugin;
+use justinholtweb\rat\records\EditLogRecord;
 use yii\db\Expression;
 
 class EditTracker extends Component
@@ -30,6 +33,11 @@ class EditTracker extends Component
      * nothing can't turn a widget render into a full table scan.
      */
     private const MAX_VISIBILITY_BATCHES = 10;
+
+    /**
+     * How many old rows to delete per statement when pruning.
+     */
+    private const PRUNE_CHUNK = 5000;
 
     /**
      * Per-request cache of last-editor lookups, keyed by "elementId-siteId".
@@ -57,7 +65,9 @@ class EditTracker extends Component
         $record->isNew = $isNew;
 
         $dirtyAttributes = $element->getDirtyAttributes();
-        $record->dirtyAttributes = !empty($dirtyAttributes) ? json_encode($dirtyAttributes) : null;
+        // setAttribute(), not the property: the column shares its name with ActiveRecord's own
+        // read-only `dirtyAttributes`.
+        $record->setAttribute('dirtyAttributes', !empty($dirtyAttributes) ? json_encode($dirtyAttributes) : null);
 
         $record->save(false);
 
@@ -83,8 +93,51 @@ class EditTracker extends Component
             return false;
         }
 
+        // Defaults when the plugin isn't loaded — the unit suite runs this without booting Craft.
+        $settings = Plugin::getInstance()?->getSettings() ?? new Settings();
+
+        foreach ($settings->excludedElementTypes as $type) {
+            if ($type !== '' && is_a($element, $type)) {
+                return false;
+            }
+        }
+
+        if (!$settings->trackAnonymousSiteSaves && $this->isAnonymousSiteRequest()) {
+            return false;
+        }
+
         return true;
     }
+
+    /**
+     * Whether this request is a front-end one from somebody who isn't signed in — a cart
+     * recalculating, a form submitting. Until 5.1.3 every such save was logged, so on a store the
+     * table grew by rows per cart action.
+     */
+    public function isAnonymousSiteRequest(): bool
+    {
+        // Queue jobs — imports, resaves — are the system at work, not a visitor. Craft runs the
+        // queue from a cookieless web request on sites that run it automatically, which would
+        // otherwise look exactly like an anonymous front-end save.
+        // @phpstan-ignore isset.property (Craft::$app is unset in the unit suite, which runs without Craft)
+        if ($this->queueDepth > 0 || !isset(Craft::$app)) {
+            return false;
+        }
+
+        $request = Craft::$app->getRequest();
+
+        if (!$request instanceof \craft\web\Request || $request->getIsConsoleRequest() || !$request->getIsSiteRequest()) {
+            return false;
+        }
+
+        return Craft::$app->getUser()->getIdentity() === null;
+    }
+
+    /**
+     * How many queue jobs are running in this process right now. Maintained by
+     * {@see \justinholtweb\rat\Plugin} from the queue's before/after events.
+     */
+    public int $queueDepth = 0;
 
     /**
      * @return EditLog[]
@@ -145,6 +198,10 @@ class EditTracker extends Component
                 break;
             }
 
+            // One query per element type and site, and one for the editors, rather than one per row:
+            // a user who can see little of the log could otherwise cost 500 lookups per render.
+            $this->preload($edits);
+
             foreach ($edits as $edit) {
                 $element = $edit->getElement();
 
@@ -200,13 +257,139 @@ class EditTracker extends Component
         return array_map(fn(array $row) => $this->createModel($row), $rows);
     }
 
+    /**
+     * Deletes log rows older than `$days` days. Run by Craft's garbage collection with the
+     * `retentionDays` setting (see {@see \justinholtweb\rat\Plugin}) and by `rat/log/prune`.
+     *
+     * Until 5.1.3 nothing called this, so the log only ever grew. It also built its cutoff in PHP's
+     * time zone and compared it with dates Craft stores in UTC, so rows were kept, or deleted, for
+     * up to a day too long or short depending on where the server was.
+     *
+     * Deletes in chunks of ids, so pruning a log that has grown for years doesn't hold one lock
+     * on the whole table while editors are saving.
+     */
     public function cleanupOldLogs(int $days = 90): int
     {
-        $date = (new DateTime())->modify("-{$days} days")->format('Y-m-d H:i:s');
+        if ($days < 1) {
+            return 0;
+        }
 
-        return Craft::$app->getDb()->createCommand()
-            ->delete('{{%rat_editlog}}', ['<', 'dateCreated', $date])
-            ->execute();
+        $cutoff = Db::prepareDateForDb(new DateTime("-{$days} days"));
+        $db = Craft::$app->getDb();
+        $deleted = 0;
+
+        do {
+            $ids = (new Query())
+                ->select(['id'])
+                ->from('{{%rat_editlog}}')
+                ->where(['<', 'dateCreated', $cutoff])
+                ->limit(self::PRUNE_CHUNK)
+                ->column();
+
+            if ($ids === []) {
+                break;
+            }
+
+            $deleted += $db->createCommand()->delete('{{%rat_editlog}}', ['id' => $ids])->execute();
+        } while (count($ids) === self::PRUNE_CHUNK);
+
+        return $deleted;
+    }
+
+    /**
+     * Loads the elements and editors of a list of edits in bulk: one query per element type and
+     * site, one for the users. After this, `getElement()` and `getUser()` on each cost nothing.
+     *
+     * @param EditLog[] $edits
+     * @param bool $elements false for an element's own history, where every row is the same
+     * element and only the editors are worth loading
+     */
+    public function preload(array $edits, bool $elements = true): void
+    {
+        $groups = [];
+        $userIds = [];
+
+        foreach ($edits as $edit) {
+            if ($elements && $edit->elementId && $edit->elementType && class_exists($edit->elementType)) {
+                $groups[$edit->elementType][(int)$edit->siteId][] = $edit->elementId;
+            }
+            if ($edit->userId) {
+                $userIds[$edit->userId] = true;
+            }
+        }
+
+        $loaded = [];
+
+        /** @var array<class-string<ElementInterface>, array<int, int[]>> $groups */
+        foreach ($groups as $type => $bySite) {
+            foreach ($bySite as $siteId => $ids) {
+                foreach ($type::find()->id(array_unique($ids))->siteId($siteId)->status(null)->all() as $element) {
+                    $loaded["$type:$siteId:$element->id"] = $element;
+                }
+            }
+        }
+
+        $users = $userIds === [] ? [] : User::find()->id(array_keys($userIds))->status(null)->indexBy('id')->all();
+
+        foreach ($edits as $edit) {
+            if ($elements) {
+                $edit->setElement($loaded["{$edit->elementType}:{$edit->siteId}:{$edit->elementId}"] ?? null);
+            }
+            $edit->setUser($edit->userId ? ($users[$edit->userId] ?? null) : null);
+        }
+    }
+
+    /**
+     * Fetches the last editor of every element on an index page in one query, so the "Last
+     * Editor" column doesn't cost a query per row.
+     *
+     * The latest row per element and site is the one with the highest id: rows are only ever
+     * inserted, so id order is insertion order — the same tie-break {@see getLastEditor()} uses.
+     *
+     * @param ElementInterface[] $elements
+     */
+    public function prefetchLastEditors(array $elements): void
+    {
+        $pairs = [];
+
+        foreach ($elements as $element) {
+            if ($element instanceof ElementInterface && $element->id && $element->siteId) {
+                $key = "{$element->id}-{$element->siteId}";
+                if (!array_key_exists($key, $this->lastEditorCache)) {
+                    $pairs[$key] = [(int)$element->id, (int)$element->siteId];
+                }
+            }
+        }
+
+        if ($pairs === []) {
+            return;
+        }
+
+        $latest = (new Query())
+            ->select(['id' => 'MAX([[id]])'])
+            ->from('{{%rat_editlog}}')
+            ->where(['elementId' => array_unique(array_column($pairs, 0))])
+            ->andWhere(['siteId' => array_unique(array_column($pairs, 1))])
+            ->groupBy(['elementId', 'siteId']);
+
+        $rows = (new Query())
+            ->select(['l.elementId', 'l.siteId', 'l.userId', 'l.dateCreated', 'u.fullName', 'u.username', 'u.email'])
+            ->from(['l' => '{{%rat_editlog}}'])
+            ->leftJoin(['u' => '{{%users}}'], '[[u.id]] = [[l.userId]]')
+            ->where(['l.id' => $latest])
+            ->all();
+
+        foreach ($pairs as $key => $_) {
+            $this->lastEditorCache[$key] = null;
+        }
+
+        foreach ($rows as $row) {
+            $key = "{$row['elementId']}-{$row['siteId']}";
+            if (array_key_exists($key, $pairs)) {
+                unset($row['elementId'], $row['siteId']);
+                $this->lastEditorCache[$key] = $row;
+            }
+        }
     }
 
     /**

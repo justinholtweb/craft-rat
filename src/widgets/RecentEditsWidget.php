@@ -4,8 +4,8 @@ namespace justinholtweb\rat\widgets;
 
 use Craft;
 use craft\base\Widget;
-use justinholtweb\rat\Plugin;
 use justinholtweb\rat\assets\RatAsset;
+use justinholtweb\rat\Plugin;
 
 class RecentEditsWidget extends Widget
 {

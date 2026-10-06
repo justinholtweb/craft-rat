@@ -1,5 +1,30 @@
 # Changelog
 
+## 5.1.3 - 2026-10-05
+
+> {warning} Rat now prunes its edit log. During Craft's garbage collection, entries older than
+> **90 days** are deleted. Change that under **Settings → Plugins → Rat**, or set it to 0 to keep
+> everything. On a site that has been running for a while, the first prune can remove a lot, so
+> raise the setting first if you want more history kept. Front-end saves by visitors who aren't
+> signed in, and Commerce orders and carts, are no longer recorded.
+
+### Fixed
+- The edit log grew without limit: `cleanupOldLogs()` existed, but nothing called it. It now runs on
+  Craft's garbage collection, keeping the new **Keep edit history for** setting (90 days by
+  default), and there's a `php craft rat/log/prune [--days=N]` command.
+- Every front-end save was logged, so a store gained rows on every cart action. Saves by anonymous
+  front-end visitors are now skipped (a setting turns them back on), and so are Commerce orders
+  (an editable list of excluded element types). Saves made by queue jobs are still recorded, even
+  when Craft runs the queue from an anonymous request.
+- `cleanupOldLogs()` built its cutoff in the server's time zone while Craft stores dates in UTC,
+  so rows were kept or deleted up to a day off. It now compares in UTC, and deletes in chunks so
+  pruning a large log doesn't lock the table for long.
+- The Recent Edits widget loaded each entry's element and editor one query at a time, up to 500
+  queries per render for a user who can see little. Elements now load in one query per type and
+  site, and editors in one query. The edit-history sidebar loads its editors in one query too.
+- The **Last Editor** index column ran one query per row. It's now fetched for the whole page in
+  one query.
+
 ## 5.1.2 - 2026-09-15
 
 ### Fixed
