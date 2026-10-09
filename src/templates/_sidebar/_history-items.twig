@@ -13,8 +13,8 @@
             {% else %}
                 <strong>{{ 'System'|t('rat') }}</strong>
             {% endif %}
-            <span class="rat-history-action">
-                {{ edit.isNew ? 'created'|t('rat') : 'edited'|t('rat') }}
+            <span class="rat-history-action{{ edit.isDeletion ? ' rat-history-action--deleted' }}">
+                {{ edit.getActionVerb() }}
             </span>
         </div>
         <div class="rat-history-date light">
@@ -22,6 +22,10 @@
                 {{ edit.dateCreated|timestamp }}
             </span>
         </div>
+        {% set summary = edit.getMoveSummary() %}
+        {% if summary %}
+            <div class="rat-history-attrs light">{{ summary }}</div>
+        {% endif %}
         {% set attrs = edit.getDirtyAttributesList() %}
         {% if attrs|length %}
             <div class="rat-history-attrs light">

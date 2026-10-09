@@ -1,6 +1,6 @@
 # Rat for Craft CMS 5
 
-Track which users made edits to all content types on your Craft CMS site. Rat logs every element save with user attribution, changed fields, and timestamps — then surfaces that history in a dashboard widget and per-element sidebar panel.
+Track which users made edits to all content types on your Craft CMS site. Rat logs every element save, delete, restore and structure move with user attribution, changed fields, and timestamps — then surfaces that history in a dashboard widget and per-element sidebar panel. Deleted elements stay in the log, so "who deleted this?" always has an answer.
 
 Full documentation: [craft-rat.com](https://craft-rat.com)
 
@@ -32,17 +32,39 @@ Supported element types:
 - Craft Commerce Products and Variants (if Commerce is installed). Orders are excluded by default because a cart is an order, saved on every change; remove it from the exclusions to record them.
 - Any custom element type
 
+### Deletes, Restores and Moves
+
+Rat records the rest of an element's life too, each with who did it, when, the element's type, ID and site, and its title as it was at the time:
+
+- **Deleted** — moved to the trash.
+- **Deleted permanently** — deleted outright, or emptied from the trash. The element is gone, but its history isn't: the log keeps every row it had, and the title recorded at the time.
+- **Restored** — brought back from the trash.
+- **Moved** — repositioned in a structure, with what it was placed against and where it was and is now: "Placed after “Pricing”. Was under “About”, position 3. Now at the top level, position 2."
+
+An element's first placement in a structure is part of creating it, so it isn't recorded as a move, and nor is a move that leaves the element where it was. Nested elements deleted or restored along with their owner (Matrix entries, say) are covered by the owner's own row rather than one each. Drafts and revisions, excluded element types and anonymous front-end requests are skipped exactly as they are for saves.
+
+Elements that Craft's garbage collection purges from the trash once its soft-delete period is up aren't recorded: Craft deletes those directly, without any event to hear.
+
+To find out who deleted something, from the command line:
+
+```bash
+php craft rat/log/deleted                      # the 50 most recent deletions
+php craft rat/log/deleted --search="Pricing"   # by the title recorded at the time
+```
+
 ### Dashboard Widget
 
-Add the **Recent Edits** widget to your dashboard to see a live feed of edit activity across the site. Each row shows the user, element name (linked to its edit page), element type, action (created or edited), and a relative timestamp. The display limit is configurable from 1 to 100.
+Add the **Recent Edits** widget to your dashboard to see a live feed of edit activity across the site. Each row shows the user, element name (linked to its edit page), element type, action (created, edited, deleted, deleted permanently, restored or moved), and a relative timestamp. The display limit is configurable from 1 to 100.
+
+Set the widget's **Show** option to **Deletions only** for a "Recent Deletions" list: everything moved to the trash or deleted permanently, with who did it.
 
 ### Element Sidebar
 
-Every element edit page gets an **Edit History** panel in the sidebar showing the last 10 edits with user photos, action type, changed fields, and timestamps. A "View more..." link loads additional history via AJAX.
+Every element edit page gets an **Edit History** panel in the sidebar showing the last 10 edits with user photos, action type, changed fields, and timestamps. Deletes, restores and moves show there too, moves with where the element went. A "View more..." link loads additional history via AJAX.
 
 ### Multi-Site Support
 
-Edits are tracked per site, so multi-site installs get accurate per-site history.
+Edits are tracked per site, so multi-site installs get accurate per-site history. Deletes, restores and moves happen to an element on every site at once, so they show in its history whichever site you view it in.
 
 ### Permissions
 
@@ -50,19 +72,22 @@ Edit history is only ever shown to users who could open the element themselves. 
 
 - The **Recent Edits** widget only lists edits to elements the viewing user can access. An editor limited to one section won't see titles from any other.
 - The element-history endpoint returns a 403 for elements the user isn't authorized to view.
+- Elements in the trash are checked the same way, so an editor sees deletions in the sections they can view.
 
-Admins see everything, including edits to elements that have since been deleted.
+An element deleted permanently has nothing left to check a user against, so only admins see its history, in the widget and from the element-history endpoint.
 
 ## How It Works
 
-Rat registers a single `Element::EVENT_AFTER_SAVE` listener on the base `Element` class, so all element types are covered without needing individual listeners. Each save is recorded to a `rat_editlog` database table with the element ID, site ID, user ID, element type, label, and a JSON list of changed field names.
+Rat registers a single `Element::EVENT_AFTER_SAVE` listener on the base `Element` class, so all element types are covered without needing individual listeners. Deletes and restores come from the `Elements` service's after-delete and after-restore events, which say whether a delete was permanent, and moves from the `Structures` service's update events (the move events on Craft before 5.9). Each is recorded to a `rat_editlog` database table with the element ID, site ID, user ID, element type, label, the `action` (`save`, `delete`, `hardDelete`, `restore` or `move`), a JSON list of changed field names for saves, and JSON `details` for moves.
+
+The log has no foreign key to the element, so its rows outlive the element they describe.
 
 The sidebar uses `Element::EVENT_DEFINE_SIDEBAR_HTML` to inject edit history into every element edit page. The widget is registered via `Dashboard::EVENT_REGISTER_WIDGET_TYPES`.
 
 ## Cleanup
 
 The log is pruned during Craft's garbage collection: entries older than **Keep edit history for**
-(90 days by default) are deleted. Set it to 0 to keep everything. To prune on your own schedule:
+(90 days by default) are deleted, deletions included. Set it to 0 to keep everything. To prune on your own schedule:
 
 ```bash
 php craft rat/log/prune            # uses the setting

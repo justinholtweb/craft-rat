@@ -3,6 +3,7 @@
 namespace justinholtweb\rat\controllers;
 
 use Craft;
+use craft\base\ElementInterface;
 use craft\web\Controller;
 use craft\web\View;
 use justinholtweb\rat\Plugin;
@@ -26,19 +27,22 @@ class EditLogController extends Controller
         // who touched them, and which fields changed. Gate it behind the same
         // check Craft uses for the element's own edit page, so an editor can't
         // read history for a section they have no access to.
-        $element = Craft::$app->getElements()->getElementById($elementId, null, $siteId);
+        // Elements in the trash are still checked like any other. One deleted permanently has
+        // nothing left to check against, so only an admin can read what the log kept of it.
+        $element = $this->findElement($elementId, $siteId);
+        $tracker = Plugin::getInstance()->getEditTracker();
 
         if (!$element) {
-            throw new NotFoundHttpException('Element not found.');
-        }
-
-        if (!Craft::$app->getElements()->canView($element)) {
+            if (!Craft::$app->getUser()->getIdentity()?->admin || !$tracker->hasHistory($elementId)) {
+                throw new NotFoundHttpException('Element not found.');
+            }
+        } elseif (!Craft::$app->getElements()->canView($element)) {
             throw new ForbiddenHttpException('You don’t have permission to view this element’s edit history.');
         }
 
         // Fetch one more than asked for, so we can tell the caller whether
         // another page exists without running a second count query.
-        $history = Plugin::getInstance()->getEditTracker()->getElementHistory(
+        $history = $tracker->getElementHistory(
             $elementId,
             $siteId,
             $limit + 1,
@@ -51,7 +55,7 @@ class EditLogController extends Controller
             array_pop($history);
         }
 
-        Plugin::getInstance()->getEditTracker()->preload($history, elements: false);
+        $tracker->preload($history, elements: false);
 
         $data = array_map(function($entry) {
             $user = $entry->getUser();
@@ -66,6 +70,12 @@ class EditLogController extends Controller
                     ? Craft::$app->getAssets()->getThumbUrl($photo, 30, iconFallback: false)
                     : null,
                 'isNew' => $entry->isNew,
+                'action' => $entry->action,
+                'actionLabel' => $entry->getActionLabel(),
+                'details' => $entry->getDetailsList() ?: null,
+                'summary' => $entry->getMoveSummary(),
+                'elementLabel' => $entry->elementLabel,
+                'siteId' => $entry->siteId,
                 'dirtyAttributes' => $entry->getDirtyAttributesList(),
                 'dateCreated' => $entry->dateCreated?->format('c'),
             ];
@@ -86,5 +96,16 @@ class EditLogController extends Controller
             'html' => $html,
             'hasMore' => $hasMore,
         ]);
+    }
+
+    private function findElement(int $elementId, int $siteId): ?ElementInterface
+    {
+        $type = Craft::$app->getElements()->getElementTypeById($elementId);
+
+        if (!$type || !is_subclass_of($type, ElementInterface::class)) {
+            return null;
+        }
+
+        return $type::find()->id($elementId)->siteId($siteId)->status(null)->trashed(null)->one();
     }
 }

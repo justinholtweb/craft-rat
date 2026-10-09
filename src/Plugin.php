@@ -10,13 +10,17 @@ use craft\controllers\ElementIndexesController;
 use craft\elements\db\ElementQuery;
 use craft\events\DefineAttributeHtmlEvent;
 use craft\events\DefineHtmlEvent;
+use craft\events\ElementEvent;
 use craft\events\ModelEvent;
+use craft\events\MoveElementEvent;
 use craft\events\PopulateElementsEvent;
 use craft\events\RegisterComponentTypesEvent;
 use craft\events\RegisterElementSortOptionsEvent;
 use craft\events\RegisterElementTableAttributesEvent;
 use craft\services\Dashboard;
+use craft\services\Elements;
 use craft\services\Gc;
+use craft\services\Structures;
 use justinholtweb\rat\assets\RatAsset;
 use justinholtweb\rat\models\Settings;
 use justinholtweb\rat\services\EditTracker;
@@ -32,7 +36,7 @@ use yii\queue\Queue;
  */
 class Plugin extends BasePlugin
 {
-    public string $schemaVersion = '1.0.0';
+    public string $schemaVersion = '1.1.0';
 
     public bool $hasCpSettings = true;
 
@@ -119,6 +123,31 @@ class Plugin extends BasePlugin
                 $this->getEditTracker()->logEdit($element, $event->isNew);
             },
         );
+
+        // Deletes, restores and structure moves. Listened for on the services rather than the
+        // element, because that's where Craft says whether a delete was permanent and which
+        // structure action a move was.
+        Event::on(Elements::class, Elements::EVENT_AFTER_DELETE_ELEMENT, function(ElementEvent $event) {
+            $this->getEditTracker()->logDelete($event->element);
+        });
+        Event::on(Elements::class, Elements::EVENT_BEFORE_RESTORE_ELEMENT, function(ElementEvent $event) {
+            $this->getEditTracker()->beforeRestore($event->element);
+        });
+        Event::on(Elements::class, Elements::EVENT_AFTER_RESTORE_ELEMENT, function(ElementEvent $event) {
+            $this->getEditTracker()->logRestore($event->element);
+        });
+
+        // Craft 5.9 renamed the move events to "update" and stopped firing the old names; before
+        // 5.9 only the old names exist. Exactly one pair fires on any version.
+        [$beforeMove, $afterMove] = defined(Structures::class . '::EVENT_AFTER_UPDATE_ELEMENT')
+            ? ['beforeUpdateElement', 'afterUpdateElement']
+            : ['beforeMoveElement', 'afterMoveElement'];
+        Event::on(Structures::class, $beforeMove, function(MoveElementEvent $event) {
+            $this->getEditTracker()->beforeMove($event);
+        });
+        Event::on(Structures::class, $afterMove, function(MoveElementEvent $event) {
+            $this->getEditTracker()->logMove($event);
+        });
 
         // Register dashboard widget
         Event::on(

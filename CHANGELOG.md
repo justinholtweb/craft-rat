@@ -1,5 +1,30 @@
 # Changelog
 
+## 5.2.0 - 2026-10-08
+
+### Added
+- Rat now records deletes, restores and structure moves, not only saves. Each row has who did it,
+  when, the element's type, ID and site, and its title at the time. Deletes are recorded as
+  **Deleted** (to the trash) or **Deleted permanently**; moves say what the element was placed
+  against and its parent and position before and after.
+- The Edit History sidebar, the Recent Edits widget and the element-history endpoint show the new
+  actions with their own labels. The endpoint's rows gain `action`, `actionLabel`, `details`,
+  `summary`, `elementLabel` and `siteId`.
+- The Recent Edits widget has a **Show** option; **Deletions only** turns it into a Recent
+  Deletions list.
+- `php craft rat/log/deleted [--search=…] [--limit=N]` lists who deleted what, including elements
+  deleted permanently, searched by the title recorded at the time.
+- Admins can read the history of an element that was deleted permanently from the element-history
+  endpoint. Everybody else still gets a 404 for it.
+
+### Changed
+- A permanent delete no longer erases the element's history. A foreign key deleted the log rows
+  along with the element, so the record of who deleted it went with it. The migration drops it.
+- Elements in the trash are now checked against the viewer's permissions like any other, rather
+  than being shown to admins only.
+- Deletes, restores and moves show in an element's history whichever site it's viewed in, since
+  they happen on every site at once.
+
 ## 5.1.3 - 2026-10-05
 
 > {warning} Rat now prunes its edit log. During Craft's garbage collection, entries older than

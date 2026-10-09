@@ -17,6 +17,8 @@ class Install extends Migration
             'elementLabel' => $this->string(255)->null(),
             'isNew' => $this->boolean()->defaultValue(false)->notNull(),
             'dirtyAttributes' => $this->text()->null(),
+            'action' => $this->string(20)->notNull()->defaultValue('save'),
+            'details' => $this->text()->null(),
             'dateCreated' => $this->dateTime()->notNull(),
             'dateUpdated' => $this->dateTime()->notNull(),
             'uid' => $this->uid(),
@@ -27,8 +29,10 @@ class Install extends Migration
         $this->createIndex(null, '{{%rat_editlog}}', ['elementType']);
         $this->createIndex(null, '{{%rat_editlog}}', ['dateCreated']);
         $this->createIndex(null, '{{%rat_editlog}}', ['elementId', 'siteId']);
+        $this->createIndex(null, '{{%rat_editlog}}', ['action']);
 
-        $this->addForeignKey(null, '{{%rat_editlog}}', ['elementId'], '{{%elements}}', ['id'], 'CASCADE', null);
+        // No foreign key on elementId: the log has to outlive the element, or "who deleted this?"
+        // would be answered by the deletion itself erasing the answer.
         $this->addForeignKey(null, '{{%rat_editlog}}', ['siteId'], '{{%sites}}', ['id'], 'CASCADE', null);
         $this->addForeignKey(null, '{{%rat_editlog}}', ['userId'], '{{%users}}', ['id'], 'SET NULL', null);
 

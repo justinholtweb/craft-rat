@@ -6,7 +6,9 @@ use Craft;
 use craft\base\Component;
 use craft\base\ElementInterface;
 use craft\db\Query;
+use craft\db\Table;
 use craft\elements\User;
+use craft\events\MoveElementEvent;
 use craft\helpers\Db;
 use craft\helpers\Html;
 use DateTime;
@@ -46,9 +48,192 @@ class EditTracker extends Component
      */
     private array $lastEditorCache = [];
 
+    /**
+     * Structure positions noted before a move, keyed by "structureId-elementId".
+     *
+     * @var array<string, array{parentId: int|null, parentLabel: string|null, position: int}>
+     */
+    private array $pendingMoves = [];
+
+    /**
+     * Elements being restored along with their owner, keyed by ID.
+     *
+     * @var array<int, true>
+     */
+    private array $restoringWithOwner = [];
+
     public function logEdit(ElementInterface $element, bool $isNew): void
     {
         if (!$this->shouldTrack($element)) {
+            return;
+        }
+
+        $dirtyAttributes = $element->getDirtyAttributes();
+
+        $this->record($element, EditLog::ACTION_SAVE, $isNew, dirtyAttributes: !empty($dirtyAttributes) ? $this->encode($dirtyAttributes) : null);
+    }
+
+    /**
+     * Records an element being deleted: to the trash, or permanently (`$element->hardDelete`).
+     * Runs after the delete, so for a permanent one the element is already gone — the label
+     * recorded here is what the log shows for it from then on.
+     *
+     * Nested elements deleted along with their owner (Matrix entries, say) are skipped: the
+     * owner's own row already says what happened, and one delete shouldn't read as dozens.
+     */
+    public function logDelete(ElementInterface $element): void
+    {
+        if (!$this->shouldTrack($element) || $element->deletedWithOwner) {
+            return;
+        }
+
+        $this->record($element, $element->hardDelete ? EditLog::ACTION_HARD_DELETE : EditLog::ACTION_DELETE);
+    }
+
+    /**
+     * Notes, before a restore, whether the element was trashed along with its owner. Craft clears
+     * `deletedWithOwner` before announcing the restore, so {@see logRestore()} can't ask it then.
+     */
+    public function beforeRestore(ElementInterface $element): void
+    {
+        if ($element->id && $element->deletedWithOwner) {
+            $this->restoringWithOwner[$element->id] = true;
+        }
+    }
+
+    /**
+     * Records an element being restored from the trash. Nested elements coming back with their
+     * owner are skipped, for the same reason {@see logDelete()} skips them going.
+     */
+    public function logRestore(ElementInterface $element): void
+    {
+        if (isset($this->restoringWithOwner[$element->id])) {
+            unset($this->restoringWithOwner[$element->id]);
+            return;
+        }
+
+        if (!$this->shouldTrack($element)) {
+            return;
+        }
+
+        $this->record($element, EditLog::ACTION_RESTORE);
+    }
+
+    /**
+     * Notes where an element sits in a structure before it's moved, so {@see logMove()} can say
+     * where it came from. Only repositioning reaches here — an element's first placement in a
+     * structure is part of creating it, and the save already records that.
+     */
+    public function beforeMove(MoveElementEvent $event): void
+    {
+        $element = $event->element;
+
+        if (!$element->id || !$this->shouldTrack($element)) {
+            return;
+        }
+
+        $position = $this->structurePosition($event->structureId, $element->id, $element->siteId);
+
+        // Not in the structure yet: this is its first placement, not a move.
+        if ($position !== null) {
+            $this->pendingMoves["$event->structureId-$element->id"] = $position;
+        }
+    }
+
+    /**
+     * Records a structure move: what the element was placed against, and its parent and position
+     * among its siblings before and after. A move that leaves it exactly where it was isn't one.
+     */
+    public function logMove(MoveElementEvent $event): void
+    {
+        $element = $event->element;
+        $key = "$event->structureId-$element->id";
+
+        if (!array_key_exists($key, $this->pendingMoves)) {
+            return;
+        }
+
+        $from = $this->pendingMoves[$key];
+        unset($this->pendingMoves[$key]);
+
+        $to = $this->structurePosition($event->structureId, $element->id, $element->siteId);
+
+        if ($to !== null && $from['parentId'] === $to['parentId'] && $from['position'] === $to['position']) {
+            return;
+        }
+
+        $this->record($element, EditLog::ACTION_MOVE, details: $this->encode([
+            'structureId' => $event->structureId,
+            'action' => $event->action,
+            'targetId' => $event->targetElementId,
+            'targetLabel' => $event->targetElementId ? $this->labelOf($event->targetElementId, $element->siteId) : null,
+            'from' => $from,
+            'to' => $to,
+        ]));
+    }
+
+    /**
+     * Where an element sits in a structure: its parent (null at the top level), that parent's
+     * label, and its 1-based position among its siblings. Read straight from the nested set, so it
+     * costs three small queries rather than loading the branch.
+     *
+     * @return array{parentId: int|null, parentLabel: string|null, position: int}|null
+     */
+    public function structurePosition(int $structureId, int $elementId, ?int $siteId = null): ?array
+    {
+        $node = (new Query())
+            ->select(['root', 'lft', 'rgt', 'level'])
+            ->from(Table::STRUCTUREELEMENTS)
+            ->where(['structureId' => $structureId, 'elementId' => $elementId])
+            ->one();
+
+        if (!$node) {
+            return null;
+        }
+
+        // Every structure hangs off one root node with no element, so a top-level element's
+        // parent is that node and comes back with a null elementId.
+        $parent = (new Query())
+            ->select(['elementId', 'lft'])
+            ->from(Table::STRUCTUREELEMENTS)
+            ->where(['structureId' => $structureId, 'root' => $node['root'], 'level' => (int)$node['level'] - 1])
+            ->andWhere(['<', 'lft', $node['lft']])
+            ->andWhere(['>', 'rgt', $node['rgt']])
+            ->one();
+
+        $earlierSiblings = (new Query())
+            ->from(Table::STRUCTUREELEMENTS)
+            ->where(['structureId' => $structureId, 'root' => $node['root'], 'level' => $node['level']])
+            ->andWhere(['<', 'lft', $node['lft']])
+            ->andWhere(['>', 'lft', $parent['lft'] ?? 0])
+            ->count();
+
+        $parentId = !empty($parent['elementId']) ? (int)$parent['elementId'] : null;
+
+        return [
+            'parentId' => $parentId,
+            'parentLabel' => $parentId ? $this->labelOf($parentId, $siteId) : null,
+            'position' => (int)$earlierSiblings + 1,
+        ];
+    }
+
+    /**
+     * Writes one log row. Everything about the element is captured now, label included, because
+     * after a delete there may be nothing left to look it up from.
+     */
+    private function record(
+        ElementInterface $element,
+        string $action,
+        bool $isNew = false,
+        ?string $dirtyAttributes = null,
+        ?string $details = null,
+    ): void {
+        // Between deploying 5.2 and running its migration, the table has no column for anything
+        // but a save. Saves still get recorded, as they always were; the rest can't be, and none
+        // of it may stop the element's own save or delete.
+        $lifecycle = $this->hasLifecycleColumns();
+
+        if (!$lifecycle && $action !== EditLog::ACTION_SAVE) {
             return;
         }
 
@@ -63,11 +248,13 @@ class EditTracker extends Component
         // An overlong label must never be what stops content from saving.
         $record->elementLabel = mb_substr((string)$element, 0, 255);
         $record->isNew = $isNew;
-
-        $dirtyAttributes = $element->getDirtyAttributes();
+        if ($lifecycle) {
+            $record->action = $action;
+            $record->details = $details;
+        }
         // setAttribute(), not the property: the column shares its name with ActiveRecord's own
         // read-only `dirtyAttributes`.
-        $record->setAttribute('dirtyAttributes', !empty($dirtyAttributes) ? json_encode($dirtyAttributes) : null);
+        $record->setAttribute('dirtyAttributes', $dirtyAttributes);
 
         $record->save(false);
 
@@ -77,7 +264,29 @@ class EditTracker extends Component
     }
 
     /**
-     * Determines whether a save should be recorded.
+     * Whether the `action` and `details` columns exist yet, i.e. whether the 5.2 migration has run.
+     * Read from the schema Craft already has loaded, so it costs nothing after the first call.
+     */
+    private function hasLifecycleColumns(): bool
+    {
+        return EditLogRecord::getTableSchema()->getColumn('action') !== null;
+    }
+
+    private function encode(array $value): ?string
+    {
+        // A label cut mid-character by the 255 limit must not turn the whole row into `false`.
+        return json_encode($value, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) ?: null;
+    }
+
+    private function labelOf(int $elementId, ?int $siteId): ?string
+    {
+        $element = Craft::$app->getElements()->getElementById($elementId, null, $siteId);
+
+        return $element ? mb_substr((string)$element, 0, 255) : null;
+    }
+
+    /**
+     * Determines whether a save — or a delete, restore or move — should be recorded.
      *
      * Drafts, revisions, propagating saves (multi-site content propagation),
      * and bulk resaves are intentionally excluded so the log only reflects
@@ -140,23 +349,14 @@ class EditTracker extends Component
     public int $queueDepth = 0;
 
     /**
+     * @param string[]|null $actions only these actions (see the `EditLog::ACTION_*` constants), or
+     * null for all of them
      * @return EditLog[]
      */
-    public function getRecentEdits(int $limit = 20, int $offset = 0): array
+    public function getRecentEdits(int $limit = 20, int $offset = 0, ?array $actions = null): array
     {
-        $rows = (new Query())
-            ->select([
-                'l.id',
-                'l.elementId',
-                'l.siteId',
-                'l.userId',
-                'l.elementType',
-                'l.elementLabel',
-                'l.isNew',
-                'l.dirtyAttributes',
-                'l.dateCreated',
-            ])
-            ->from(['l' => '{{%rat_editlog}}'])
+        $rows = $this->logQuery()
+            ->andFilterWhere(['l.action' => $actions])
             // dateCreated only resolves to the second, so tie-break on id to
             // keep paginated results stable and genuinely newest-first.
             ->orderBy(['l.dateCreated' => SORT_DESC, 'l.id' => SORT_DESC])
@@ -177,9 +377,10 @@ class EditTracker extends Component
      * query. To still return a full page, this walks the log in batches, up to
      * a bounded number of them.
      *
+     * @param string[]|null $actions see {@see getRecentEdits()}
      * @return EditLog[]
      */
-    public function getRecentEditsVisibleTo(?User $user, int $limit = 20): array
+    public function getRecentEditsVisibleTo(?User $user, int $limit = 20, ?array $actions = null): array
     {
         if (!$user) {
             return [];
@@ -192,7 +393,7 @@ class EditTracker extends Component
         $offset = 0;
 
         for ($batch = 0; $batch < self::MAX_VISIBILITY_BATCHES; $batch++) {
-            $edits = $this->getRecentEdits($batchSize, $offset);
+            $edits = $this->getRecentEdits($batchSize, $offset, $actions);
 
             if (empty($edits)) {
                 break;
@@ -205,9 +406,10 @@ class EditTracker extends Component
             foreach ($edits as $edit) {
                 $element = $edit->getElement();
 
-                // A missing element is either deleted or on a site this user
-                // can't reach; either way there's nothing left to authorize
-                // against, so only admins keep seeing it.
+                // A missing element is either deleted permanently or on a site
+                // this user can't reach; either way there's nothing left to
+                // authorize against, so only admins keep seeing it. Elements in
+                // the trash are still loaded, and checked like any other.
                 $canView = $element !== null
                     ? $elementsService->canView($element, $user)
                     : $user->admin;
@@ -228,11 +430,63 @@ class EditTracker extends Component
     }
 
     /**
+     * An element's history on one site, newest first. Deletes, restores and moves happen to the
+     * element on every site at once, so those are included whichever site they were recorded on.
+     *
      * @return EditLog[]
      */
     public function getElementHistory(int $elementId, int $siteId, int $limit = 50, int $offset = 0): array
     {
-        $rows = (new Query())
+        $rows = $this->logQuery()
+            ->where(['l.elementId' => $elementId])
+            ->andWhere([
+                'or',
+                ['l.siteId' => $siteId],
+                ['l.action' => EditLog::ELEMENT_WIDE_ACTIONS],
+            ])
+            ->orderBy(['l.dateCreated' => SORT_DESC, 'l.id' => SORT_DESC])
+            ->limit($limit)
+            ->offset($offset)
+            ->all();
+
+        return array_map(fn(array $row) => $this->createModel($row), $rows);
+    }
+
+    /**
+     * Whether anything at all is recorded for an element ID. How the history endpoint tells an
+     * element that's gone for good, but whose history an admin can still read, from an ID that
+     * never existed.
+     */
+    public function hasHistory(int $elementId): bool
+    {
+        return (new Query())->from('{{%rat_editlog}}')->where(['elementId' => $elementId])->exists();
+    }
+
+    /**
+     * Deletions, newest first, optionally narrowed to labels containing `$search` — the "who
+     * deleted this?" lookup behind `php craft rat/log/deleted`. Searches the label recorded at the
+     * time, so it finds elements that no longer exist.
+     *
+     * @return EditLog[]
+     */
+    public function getDeletions(?string $search = null, int $limit = 50): array
+    {
+        $query = $this->logQuery()
+            ->where(['l.action' => [EditLog::ACTION_DELETE, EditLog::ACTION_HARD_DELETE]])
+            ->orderBy(['l.dateCreated' => SORT_DESC, 'l.id' => SORT_DESC])
+            ->limit($limit);
+
+        if ($search !== null && $search !== '') {
+            // Escaped, so `%` and `_` in what somebody typed match themselves.
+            $query->andWhere(['like', 'l.elementLabel', $search]);
+        }
+
+        return array_map(fn(array $row) => $this->createModel($row), $query->all());
+    }
+
+    private function logQuery(): Query
+    {
+        return (new Query())
             ->select([
                 'l.id',
                 'l.elementId',
@@ -243,18 +497,9 @@ class EditTracker extends Component
                 'l.isNew',
                 'l.dirtyAttributes',
                 'l.dateCreated',
+                ...($this->hasLifecycleColumns() ? ['l.action', 'l.details'] : []),
             ])
-            ->from(['l' => '{{%rat_editlog}}'])
-            ->where([
-                'l.elementId' => $elementId,
-                'l.siteId' => $siteId,
-            ])
-            ->orderBy(['l.dateCreated' => SORT_DESC, 'l.id' => SORT_DESC])
-            ->limit($limit)
-            ->offset($offset)
-            ->all();
-
-        return array_map(fn(array $row) => $this->createModel($row), $rows);
+            ->from(['l' => '{{%rat_editlog}}']);
     }
 
     /**
@@ -323,7 +568,8 @@ class EditTracker extends Component
         /** @var array<class-string<ElementInterface>, array<int, int[]>> $groups */
         foreach ($groups as $type => $bySite) {
             foreach ($bySite as $siteId => $ids) {
-                foreach ($type::find()->id(array_unique($ids))->siteId($siteId)->status(null)->all() as $element) {
+                // Trashed ones too: they're still there to link to and to authorize against.
+                foreach ($type::find()->id(array_unique($ids))->siteId($siteId)->status(null)->trashed(null)->all() as $element) {
                     $loaded["$type:$siteId:$element->id"] = $element;
                 }
             }
@@ -511,6 +757,8 @@ SQL;
         $model->elementType = $row['elementType'];
         $model->elementLabel = $row['elementLabel'];
         $model->isNew = (bool)$row['isNew'];
+        $model->action = $row['action'] ?? EditLog::ACTION_SAVE;
+        $model->details = $row['details'] ?? null;
         $model->dirtyAttributes = $row['dirtyAttributes'];
         $model->dateCreated = $row['dateCreated'] ? new DateTime($row['dateCreated']) : null;
 

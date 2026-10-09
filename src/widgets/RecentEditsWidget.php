@@ -5,11 +5,17 @@ namespace justinholtweb\rat\widgets;
 use Craft;
 use craft\base\Widget;
 use justinholtweb\rat\assets\RatAsset;
+use justinholtweb\rat\models\EditLog;
 use justinholtweb\rat\Plugin;
 
 class RecentEditsWidget extends Widget
 {
     public int $limit = 20;
+
+    /**
+     * `all`, or `deletions` for deletes only — to the trash and permanent.
+     */
+    public string $show = 'all';
 
     public static function displayName(): string
     {
@@ -25,6 +31,7 @@ class RecentEditsWidget extends Widget
     {
         $rules = parent::defineRules();
         $rules[] = [['limit'], 'integer', 'min' => 1, 'max' => 100];
+        $rules[] = [['show'], 'in', 'range' => ['all', 'deletions']];
 
         return $rules;
     }
@@ -36,6 +43,11 @@ class RecentEditsWidget extends Widget
         ]);
     }
 
+    public function getTitle(): ?string
+    {
+        return $this->show === 'deletions' ? Craft::t('rat', 'Recent Deletions') : parent::getTitle();
+    }
+
     public function getBodyHtml(): ?string
     {
         Craft::$app->getView()->registerAssetBundle(RatAsset::class);
@@ -44,10 +56,12 @@ class RecentEditsWidget extends Widget
         $edits = Plugin::getInstance()->getEditTracker()->getRecentEditsVisibleTo(
             Craft::$app->getUser()->getIdentity(),
             $this->limit,
+            $this->show === 'deletions' ? [EditLog::ACTION_DELETE, EditLog::ACTION_HARD_DELETE] : null,
         );
 
         return Craft::$app->getView()->renderTemplate('rat/_widgets/recent-edits', [
             'edits' => $edits,
+            'deletionsOnly' => $this->show === 'deletions',
         ]);
     }
 }

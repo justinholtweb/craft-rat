@@ -159,7 +159,7 @@ trait RatTestTrait
      * real Entry to work with. Entries are the element type this plugin is
      * mostly used on, and unlike users they support drafts and revisions.
      */
-    protected function createSection(string $name = 'Rat Test Posts', string $handle = 'ratTestPosts'): Section
+    protected function createSection(string $name = 'Rat Test Posts', string $handle = 'ratTestPosts', string $type = Section::TYPE_CHANNEL): Section
     {
         $entriesService = Craft::$app->getEntries();
 
@@ -187,7 +187,7 @@ trait RatTestTrait
         $section = new Section([
             'name' => $name,
             'handle' => $handle,
-            'type' => Section::TYPE_CHANNEL,
+            'type' => $type,
             'enableVersioning' => true,
             'entryTypes' => [$entryType],
             'siteSettings' => [
@@ -203,6 +203,18 @@ trait RatTestTrait
         }
 
         return $section;
+    }
+
+    /**
+     * A structure section, for the move tests: its entries sit in a nested set.
+     */
+    protected function createStructureSection(string $name = 'Rat Test Pages', string $handle = 'ratTestPages'): Section
+    {
+        $section = $this->createSection($name, $handle, Section::TYPE_STRUCTURE);
+
+        // The structure is created as the section's project config is applied, which doesn't
+        // write its ID back to the model that was saved.
+        return Craft::$app->getEntries()->getSectionById($section->id);
     }
 
     protected function createEntry(Section $section, string $title = 'Test Entry'): Entry

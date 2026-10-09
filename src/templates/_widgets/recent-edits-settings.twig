@@ -11,3 +11,15 @@
     min: 1,
     max: 100,
 }) }}
+
+{{ forms.selectField({
+    label: 'Show'|t('rat'),
+    instructions: 'Deletions only turns the widget into a “who deleted this?” list, including elements deleted permanently.'|t('rat'),
+    id: 'show',
+    name: 'show',
+    value: widget.show,
+    options: [
+        { label: 'All activity'|t('rat'), value: 'all' },
+        { label: 'Deletions only'|t('rat'), value: 'deletions' },
+    ],
+}) }}

@@ -97,6 +97,10 @@
     color: var(--gray-500);
 }
 
+.rat-history-action--deleted {
+    color: var(--error-color);
+}
+
 .rat-history-date {
     font-size: 12px;
     margin-top: 2px;

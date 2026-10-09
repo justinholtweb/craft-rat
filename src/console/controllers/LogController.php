@@ -16,9 +16,53 @@ class LogController extends Controller
      */
     public ?int $days = null;
 
+    /**
+     * @var string|null Only deletions whose recorded label contains this.
+     */
+    public ?string $search = null;
+
+    /**
+     * @var int How many deletions to list.
+     */
+    public int $limit = 50;
+
     public function options($actionID): array
     {
-        return array_merge(parent::options($actionID), ['days']);
+        return array_merge(parent::options($actionID), match ($actionID) {
+            'deleted' => ['search', 'limit'],
+            default => ['days'],
+        });
+    }
+
+    /**
+     * Lists who deleted what, newest first — including elements deleted permanently, which no
+     * longer appear anywhere else. Pass --search to narrow by title.
+     */
+    public function actionDeleted(): int
+    {
+        $tracker = Plugin::getInstance()->getEditTracker();
+        $deletions = $tracker->getDeletions($this->search, max(1, $this->limit));
+
+        if ($deletions === []) {
+            $this->stdout("No deletions recorded" . ($this->search ? " matching “{$this->search}”" : '') . ".\n");
+
+            return ExitCode::OK;
+        }
+
+        $tracker->preload($deletions, elements: false);
+
+        $rows = array_map(fn($edit) => [
+            $edit->dateCreated?->format('Y-m-d H:i') ?? '',
+            $edit->getUser()?->getFriendlyName() ?? ($edit->userId ? '#' . $edit->userId : 'System'),
+            $edit->getActionLabel(),
+            $edit->getElementTypeLabel(),
+            (string)$edit->elementId,
+            (string)$edit->elementLabel,
+        ], $deletions);
+
+        $this->table(['Date (UTC)', 'User', 'Action', 'Type', 'ID', 'Title'], $rows);
+
+        return ExitCode::OK;
     }
 
     /**

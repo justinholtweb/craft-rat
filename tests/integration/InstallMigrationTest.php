@@ -5,6 +5,7 @@ namespace justinholtweb\rat\tests\integration;
 use Craft;
 use craft\test\TestCase;
 use justinholtweb\rat\migrations\Install;
+use justinholtweb\rat\migrations\m261008_000000_record_deletes_restores_and_moves;
 use justinholtweb\rat\tests\support\RatTestTrait;
 
 /**
@@ -23,7 +24,7 @@ final class InstallMigrationTest extends TestCase
 
         foreach ([
             'id', 'elementId', 'siteId', 'userId', 'elementType',
-            'elementLabel', 'isNew', 'dirtyAttributes', 'dateCreated', 'dateUpdated', 'uid',
+            'elementLabel', 'isNew', 'action', 'details', 'dirtyAttributes', 'dateCreated', 'dateUpdated', 'uid',
         ] as $column) {
             $this->assertArrayHasKey($column, $columns);
         }
@@ -33,6 +34,9 @@ final class InstallMigrationTest extends TestCase
         $this->assertTrue($columns['userId']->allowNull);
         $this->assertTrue($columns['elementLabel']->allowNull);
         $this->assertSame(255, $columns['elementLabel']->size);
+        $this->assertFalse($columns['action']->allowNull);
+        $this->assertSame('save', $columns['action']->defaultValue);
+        $this->assertTrue($columns['details']->allowNull);
     }
 
     /**
@@ -48,7 +52,7 @@ final class InstallMigrationTest extends TestCase
     {
         $sets = $this->indexColumnSets();
 
-        foreach ([['elementId'], ['userId'], ['elementType'], ['dateCreated']] as $expected) {
+        foreach ([['elementId'], ['userId'], ['elementType'], ['dateCreated'], ['action']] as $expected) {
             $this->assertContains($expected, $sets);
         }
     }
@@ -74,7 +78,11 @@ final class InstallMigrationTest extends TestCase
         }, array_values($byName));
     }
 
-    public function testDeletingAnElementCascadesToItsLogRows(): void
+    /**
+     * Until 5.2.0 a foreign key deleted an element's log rows along with it, so a permanent delete
+     * erased the history of exactly the thing somebody would come looking for.
+     */
+    public function testLogRowsOutliveTheirElement(): void
     {
         $element = $this->createUser();
         $this->assertNotEmpty($this->logRowsFor($element->id));
@@ -84,7 +92,46 @@ final class InstallMigrationTest extends TestCase
             ->delete('{{%elements}}', ['id' => $element->id])
             ->execute();
 
-        $this->assertSame([], $this->logRowsFor($element->id));
+        $this->assertNotEmpty($this->logRowsFor($element->id));
+    }
+
+    public function testTheUpgradeMigrationBringsA51TableUpToDate(): void
+    {
+        $db = Craft::$app->getDb();
+        $table = '{{%rat_editlog}}';
+
+        // Put the table back the way 5.1 left it: no action or details, cascading foreign key.
+        $old = new Install(['db' => $db]);
+        $old->dropColumn($table, 'details');
+        $old->dropIndexIfExists($table, ['action']);
+        $old->dropColumn($table, 'action');
+        $old->addForeignKey(null, $table, ['elementId'], '{{%elements}}', ['id'], 'CASCADE', null);
+        $db->getSchema()->refresh();
+        $this->assertNotEmpty($this->elementForeignKeys());
+
+        // Before the migration runs, saves are still recorded and a delete still goes through.
+        $user = $this->createUser();
+        $this->assertCount(1, $this->logRowsFor($user->id));
+        $doomed = $this->createUser();
+        $this->assertTrue(Craft::$app->getElements()->deleteElement($doomed));
+        $this->assertCount(1, $this->logRowsFor($doomed->id), 'the delete itself has nowhere to go yet');
+
+        $this->assertTrue((new m261008_000000_record_deletes_restores_and_moves(['db' => $db]))->safeUp());
+        $db->getSchema()->refresh();
+
+        $columns = $db->getTableSchema($table, true)->columns;
+        $this->assertArrayHasKey('action', $columns);
+        $this->assertArrayHasKey('details', $columns);
+        $this->assertSame([], $this->elementForeignKeys());
+        $this->assertContains(['action'], $this->indexColumnSets());
+        $this->assertSame('save', $this->logRowsFor($user->id)[0]['action'], 'existing rows are saves');
+    }
+
+    private function elementForeignKeys(): array
+    {
+        $foreignKeys = Craft::$app->getDb()->getTableSchema('{{%rat_editlog}}', true)->foreignKeys;
+
+        return array_filter($foreignKeys, fn(array $fk) => array_key_exists('elementId', $fk));
     }
 
     public function testTheMigrationCanBeRolledBackAndReapplied(): void

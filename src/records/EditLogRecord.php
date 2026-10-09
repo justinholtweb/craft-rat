@@ -12,6 +12,8 @@ use craft\db\ActiveRecord;
  * @property string $elementType
  * @property string|null $elementLabel
  * @property bool $isNew
+ * @property string $action
+ * @property string|null $details
  * @property string $dateCreated
  */
 class EditLogRecord extends ActiveRecord
